@@ -1,0 +1,19 @@
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: real-track-pvc
+  namespace: os-stogops-wrk
+  labels:
+
+    app.kubernetes.io/name: real-track
+    app.kubernetes.io/instance: real-track
+    app.kubernetes.io/managed-by: operative
+    app.kubernetes.io/component: backend
+
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
