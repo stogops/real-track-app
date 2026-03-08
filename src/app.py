@@ -3,11 +3,11 @@ from flask_sqlalchemy import SQLAlchemy
 import os
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////data/real_track.db'
+# Using a local path for the database
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///real_track.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# 1. Update the Location model to include latitude and longitude
 class AssetClass(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), unique=True, nullable=False)
@@ -19,6 +19,7 @@ class Location(db.Model):
     address = db.Column(db.String(200))
     latitude = db.Column(db.Float, nullable=True)
     longitude = db.Column(db.Float, nullable=True)
+    square_footage = db.Column(db.Float, nullable=True)
     asset_class_id = db.Column(db.Integer, db.ForeignKey('asset_class.id'), nullable=False)
 
 with app.app_context():
@@ -32,10 +33,9 @@ HTML_TEMPLATE = '''
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Real Track | Map View</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Leaflet.js CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        #map { height: 400px; width: 100%; z-index: 1; }
+        #map { height: 500px; width: 100%; z-index: 1; }
     </style>
 </head>
 <body class="bg-gray-100 p-6">
@@ -44,13 +44,22 @@ HTML_TEMPLATE = '''
         
         <!-- Map Section -->
         <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-            <div class="flex justify-between items-center mb-4">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
                 <h2 class="text-xl font-semibold">Location Map</h2>
-                <div class="flex items-center gap-2">
-                    <label class="text-sm font-medium text-gray-600">Filter by Asset Class:</label>
-                    <select id="mapFilter" onchange="updateMapMarkers()" class="border rounded p-2 text-sm bg-gray-50">
-                        <option value="all">All Assets</option>
-                    </select>
+                <div class="flex flex-wrap items-center gap-4">
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm font-medium text-gray-600">Display:</label>
+                        <select id="mapMode" onchange="updateMapMarkers()" class="border rounded p-2 text-sm bg-white">
+                            <option value="pins">Standard Pins</option>
+                            <option value="sqft">Square Footage (Circles)</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm font-medium text-gray-600">Filter Asset:</label>
+                        <select id="mapFilter" onchange="updateMapMarkers()" class="border rounded p-2 text-sm bg-white">
+                            <option value="all">All Assets</option>
+                        </select>
+                    </div>
                 </div>
             </div>
             <div id="map" class="rounded-lg border"></div>
@@ -74,17 +83,17 @@ HTML_TEMPLATE = '''
                 <div class="bg-white p-6 rounded-lg shadow-md mb-6">
                     <h2 class="text-xl font-semibold mb-4">Locations</h2>
                     
-                    <div class="bg-gray-50 p-4 rounded mb-6">
+                    <div class="bg-gray-50 p-4 rounded mb-6 border border-gray-200">
+                        <p class="text-sm font-bold text-gray-700 mb-3">Add New Location</p>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                             <input type="text" id="locName" placeholder="Location Name" class="border rounded p-2 text-sm">
                             <input type="text" id="locAddress" placeholder="Address" class="border rounded p-2 text-sm">
-                            <input type="number" step="any" id="locLat" placeholder="Latitude (e.g. 40.71)" class="border rounded p-2 text-sm">
-                            <input type="number" step="any" id="locLng" placeholder="Longitude (e.g. -74.00)" class="border rounded p-2 text-sm">
+                            <input type="number" step="any" id="locLat" placeholder="Latitude" class="border rounded p-2 text-sm">
+                            <input type="number" step="any" id="locLng" placeholder="Longitude" class="border rounded p-2 text-sm">
+                            <input type="number" step="any" id="locSqFt" placeholder="Square Footage" class="border rounded p-2 text-sm">
+                            <select id="locAssetClass" class="border rounded p-2 text-sm bg-white"></select>
                         </div>
-                        <div class="flex gap-3">
-                            <select id="locAssetClass" class="flex-1 border rounded p-2 text-sm"></select>
-                            <button onclick="addLocation()" class="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600 text-sm font-bold">Add Location</button>
-                        </div>
+                        <button onclick="addLocation()" class="w-full bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 text-sm font-bold transition">Add Location</button>
                     </div>
 
                     <div id="locationList" class="space-y-4"></div>
@@ -93,14 +102,12 @@ HTML_TEMPLATE = '''
         </div>
     </div>
 
-    <!-- Leaflet.js JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         let map;
         let markers = [];
         let allLocations = [];
 
-        // Initialize Map
         function initMap() {
             map = L.map('map').setView([20, 0], 2);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -119,14 +126,14 @@ HTML_TEMPLATE = '''
             renderClasses(classes);
             renderLocations(allLocations, classes);
             updateAssetClassDropdowns(classes);
-            updateMapMarkers(); // Refresh markers on map
+            updateMapMarkers();
         }
 
         function renderClasses(classes) {
             const list = document.getElementById('assetClassList');
             list.innerHTML = classes.map(c => `
-                <div class="flex justify-between items-center bg-gray-50 p-2 rounded">
-                    <span>${c.name}</span>
+                <div class="flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100">
+                    <span class="text-sm font-medium">${c.name}</span>
                     <button onclick="deleteAssetClass(${c.id})" class="text-red-500 hover:text-red-700 text-xs">Delete</button>
                 </div>
             `).join('') || '<p class="text-gray-400 text-sm italic">No classes</p>';
@@ -141,13 +148,14 @@ HTML_TEMPLATE = '''
                     <div>
                         <h3 class="font-bold text-gray-800">${l.name}</h3>
                         <p class="text-sm text-gray-500">${l.address || 'No address'}</p>
-                        <div class="flex gap-2 mt-1">
+                        <div class="flex flex-wrap gap-2 mt-2">
                             <span class="bg-emerald-100 text-emerald-800 text-xs px-2 py-1 rounded">${classMap[l.asset_class_id] || 'Unknown'}</span>
+                            <span class="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded">SF: ${l.square_footage?.toLocaleString() || '0'}</span>
                             ${l.latitude ? `<span class="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded">Lat: ${l.latitude}</span>` : ''}
                             ${l.longitude ? `<span class="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded">Lng: ${l.longitude}</span>` : ''}
                         </div>
                     </div>
-                    <button onclick="deleteLocation(${l.id})" class="bg-red-100 text-red-600 px-3 py-1 rounded hover:bg-red-200 text-sm">Delete</button>
+                    <button onclick="deleteLocation(${l.id})" class="bg-red-50 text-red-600 px-3 py-1 rounded hover:bg-red-100 text-sm transition">Delete</button>
                 </div>
             `).join('') || '<p class="text-gray-400 italic">No locations found</p>';
         }
@@ -155,31 +163,58 @@ HTML_TEMPLATE = '''
         function updateAssetClassDropdowns(classes) {
             const formSelect = document.getElementById('locAssetClass');
             const mapFilter = document.getElementById('mapFilter');
-            
             const options = classes.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-            
             formSelect.innerHTML = options;
             mapFilter.innerHTML = '<option value="all">All Assets</option>' + options;
         }
 
         function updateMapMarkers() {
-            // Clear existing markers
             markers.forEach(m => map.removeLayer(m));
             markers = [];
 
             const filterId = document.getElementById('mapFilter').value;
+            const mode = document.getElementById('mapMode').value;
+
             const filteredLocs = filterId === 'all' 
                 ? allLocations 
                 : allLocations.filter(l => l.asset_class_id == filterId);
 
             const bounds = [];
+            
+            // Scaling logic for Square Footage mode
+            const maxSqFt = Math.max(...filteredLocs.map(l => l.square_footage || 0), 1);
 
             filteredLocs.forEach(l => {
                 if (l.latitude && l.longitude) {
-                    const marker = L.marker([l.latitude, l.longitude])
-                        .addTo(map)
-                        .bindPopup(`<b>${l.name}</b><br>${l.address || ''}`);
-                    markers.push(marker);
+                    let layer;
+                    const popupContent = `
+                        <div class="text-sm">
+                            <b class="text-emerald-700">${l.name}</b><br>
+                            ${l.address || ''}<br>
+                            <span class="font-bold">Area:</span> ${l.square_footage?.toLocaleString() || 0} sq ft
+                        </div>
+                    `;
+
+                    if (mode === 'pins') {
+                        layer = L.marker([l.latitude, l.longitude]).bindPopup(popupContent);
+                    } else {
+                        // Calculate radius: Min 5px, Max 40px relative to largest property in view
+                        const minRadius = 5;
+                        const maxRadius = 40;
+                        const radius = minRadius + ((l.square_footage || 0) / maxSqFt) * (maxRadius - minRadius);
+
+                        layer = L.circleMarker([l.latitude, l.longitude], {
+                            radius: radius,
+                            fillColor: "#10b981",
+                            color: "#059669",
+                            weight: 1,
+                            opacity: 1,
+                            fillOpacity: 0.6
+                        }).bindPopup(popupContent);
+                    }
+
+                    layer.addTo(map);
+                    markers.push(layer);
                     bounds.push([l.latitude, l.longitude]);
                 }
             });
@@ -212,9 +247,13 @@ HTML_TEMPLATE = '''
             const address = document.getElementById('locAddress').value;
             const lat = document.getElementById('locLat').value;
             const lng = document.getElementById('locLng').value;
+            const sqft = document.getElementById('locSqFt').value;
             const asset_class_id = document.getElementById('locAssetClass').value;
             
-            if (!name || !asset_class_id) return;
+            if (!name || !asset_class_id) {
+                alert("Please provide at least a name and asset class.");
+                return;
+            }
             
             await fetch('/api/locations', {
                 method: 'POST',
@@ -224,14 +263,15 @@ HTML_TEMPLATE = '''
                     address, 
                     latitude: lat ? parseFloat(lat) : null,
                     longitude: lng ? parseFloat(lng) : null,
+                    square_footage: sqft ? parseFloat(sqft) : 0,
                     asset_class_id: parseInt(asset_class_id)
                 })
             });
             
-            document.getElementById('locName').value = '';
-            document.getElementById('locAddress').value = '';
-            document.getElementById('locLat').value = '';
-            document.getElementById('locLng').value = '';
+            // Reset fields
+            ['locName', 'locAddress', 'locLat', 'locLng', 'locSqFt'].forEach(id => {
+                document.getElementById(id).value = '';
+            });
             fetchAll();
         }
 
@@ -271,7 +311,6 @@ def delete_asset_class(id):
     db.session.commit()
     return jsonify({'success': True})
 
-# 3. Update API to return latitude and longitude
 @app.route('/api/locations', methods=['GET'])
 def get_locations():
     locs = Location.query.all()
@@ -281,10 +320,10 @@ def get_locations():
         'address': l.address, 
         'latitude': l.latitude,
         'longitude': l.longitude,
+        'square_footage': l.square_footage,
         'asset_class_id': l.asset_class_id
     } for l in locs])
 
-# 3. Update API to accept latitude and longitude
 @app.route('/api/locations', methods=['POST'])
 def add_location():
     data = request.json
@@ -293,6 +332,7 @@ def add_location():
         address=data.get('address'),
         latitude=data.get('latitude'),
         longitude=data.get('longitude'),
+        square_footage=data.get('square_footage', 0),
         asset_class_id=data['asset_class_id']
     )
     db.session.add(new_loc)
@@ -307,4 +347,4 @@ def delete_location(id):
     return jsonify({'success': True})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+    app.run(host='0.0.0.0', port=8080, debug=True)
