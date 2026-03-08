@@ -8,7 +8,8 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        #map { height: 62vh; min-height: 420px; width: 100%; border-radius: 0.75rem; }
+        #map { height: 62vh; min-height: 420px; width: 100%; border-radius: 0.75rem; position: relative; z-index: 1; }
+        .leaflet-container { z-index: 1; }
         .sidebar-item.active { background-color: #2563eb; color: white; }
         .modal-backdrop { background: rgba(17, 24, 39, 0.55); }
     </style>
@@ -22,34 +23,43 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     <p id="selectionSummary" class="text-sm text-gray-600">Loading filters...</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                    <button onclick="openModal('locationModal')" class="bg-blue-600 text-white text-sm font-semibold px-4 py-2 rounded hover:bg-blue-700">Add Location</button>
-                    <button onclick="openModal('assetClassModal')" class="bg-white border border-gray-300 text-sm font-semibold px-4 py-2 rounded hover:bg-gray-50">Add Asset Class</button>
-                    <button onclick="openModal('countyModal')" class="bg-white border border-gray-300 text-sm font-semibold px-4 py-2 rounded hover:bg-gray-50">Add County</button>
                     <label for="mapMode" class="text-sm font-medium ml-1">Map:</label>
                     <select id="mapMode" onchange="updateMarkers()" class="border rounded px-2 py-2 bg-white text-sm">
                         <option value="pins">Pins</option>
                         <option value="sqft">Square Footage</option>
                     </select>
+                    <div id="addMenuWrap" class="relative">
+                        <button id="addMenuButton" onclick="toggleAddMenu(event)" class="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded hover:bg-blue-700" aria-haspopup="true" aria-expanded="false" aria-controls="addMenu">
+                            &#9776; Add
+                        </button>
+                        <div id="addMenu" class="hidden absolute right-0 mt-2 w-48 bg-white border rounded-lg shadow-lg py-1 z-40">
+                            <button onclick="openModal('locationModal'); closeAddMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">Add Location</button>
+                            <button onclick="openModal('assetClassModal'); closeAddMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">Add Asset Class</button>
+                            <button onclick="openModal('countyModal'); closeAddMenu();" class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">Add County</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </header>
 
         <main class="max-w-7xl w-full mx-auto px-4 py-4 flex-1 flex flex-col gap-4">
             <section class="bg-white p-3 rounded-xl border shadow-sm">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label for="assetClassFilter" class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Asset Class</label>
+                        <select id="assetClassFilter" onchange="handleAssetClassFilterChange(this.value)" class="w-full border rounded px-3 py-2 bg-white text-sm"></select>
+                    </div>
+                    <div>
+                        <label for="countyFilter" class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">County</label>
+                        <select id="countyFilter" onchange="handleCountyFilterChange(this.value)" class="w-full border rounded px-3 py-2 bg-white text-sm"></select>
+                    </div>
+                </div>
+            </section>
+            <section class="bg-white p-3 rounded-xl border shadow-sm">
                 <div id="map"></div>
             </section>
-            <section class="grid grid-cols-1 lg:grid-cols-12 gap-4 pb-4">
-                <aside class="lg:col-span-4 xl:col-span-3 bg-white border rounded-xl p-4 shadow-sm space-y-6">
-                    <div>
-                        <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Asset Classes</h2>
-                        <ul id="assetClassList" class="space-y-1"></ul>
-                    </div>
-                    <div>
-                        <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Counties</h2>
-                        <ul id="countyList" class="space-y-1"></ul>
-                    </div>
-                </aside>
-                <section class="lg:col-span-8 xl:col-span-9 bg-white border rounded-xl p-4 shadow-sm">
+            <section class="pb-4">
+                <section class="bg-white border rounded-xl p-4 shadow-sm">
                     <div class="flex items-center justify-between mb-3">
                         <h2 class="text-lg font-semibold">Locations</h2>
                         <span id="locationCount" class="text-sm text-gray-600"></span>
@@ -60,7 +70,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         </main>
     </div>
 
-    <div id="assetClassModal" class="fixed inset-0 modal-backdrop hidden items-center justify-center p-4 z-40" onclick="backdropClose(event, 'assetClassModal')">
+    <div id="assetClassModal" class="fixed inset-0 modal-backdrop hidden items-center justify-center p-4" style="z-index: 3000;" onclick="backdropClose(event, 'assetClassModal')">
         <div class="w-full max-w-md bg-white rounded-lg shadow-xl border p-5">
             <h3 class="text-lg font-semibold mb-4">Add Asset Class</h3>
             <form id="assetClassForm" onsubmit="addAssetClass(event)" class="space-y-4">
@@ -76,7 +86,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         </div>
     </div>
 
-    <div id="countyModal" class="fixed inset-0 modal-backdrop hidden items-center justify-center p-4 z-40" onclick="backdropClose(event, 'countyModal')">
+    <div id="countyModal" class="fixed inset-0 modal-backdrop hidden items-center justify-center p-4" style="z-index: 3000;" onclick="backdropClose(event, 'countyModal')">
         <div class="w-full max-w-md bg-white rounded-lg shadow-xl border p-5">
             <h3 class="text-lg font-semibold mb-4">Add County of Interest</h3>
             <form id="countyForm" onsubmit="addCounty(event)" class="space-y-4">
@@ -100,7 +110,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         </div>
     </div>
 
-    <div id="locationModal" class="fixed inset-0 modal-backdrop hidden items-center justify-center p-4 z-40 overflow-y-auto" onclick="backdropClose(event, 'locationModal')">
+    <div id="locationModal" class="fixed inset-0 modal-backdrop hidden items-center justify-center p-4 overflow-y-auto" style="z-index: 3000;" onclick="backdropClose(event, 'locationModal')">
         <div class="w-full max-w-2xl bg-white rounded-lg shadow-xl border p-5 my-8">
             <h3 class="text-lg font-semibold mb-4">Add New Location</h3>
             <form id="locationForm" onsubmit="addLocation(event)" class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -159,9 +169,27 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             locations: []
         };
 
+        function toggleAddMenu(event) {
+            event.stopPropagation();
+            const menu = document.getElementById('addMenu');
+            const button = document.getElementById('addMenuButton');
+            const isHidden = menu.classList.contains('hidden');
+            menu.classList.toggle('hidden', !isHidden);
+            button.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+        }
+
+        function closeAddMenu() {
+            const menu = document.getElementById('addMenu');
+            const button = document.getElementById('addMenuButton');
+            if (!menu || !button) return;
+            menu.classList.add('hidden');
+            button.setAttribute('aria-expanded', 'false');
+        }
+
         function openModal(id) {
             const modal = document.getElementById(id);
             if (!modal) return;
+            closeAddMenu();
             if (id === 'locationModal') {
                 syncLocationModalOptions();
             }
@@ -277,6 +305,24 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             renderUI();
         }
 
+        function handleAssetClassFilterChange(value) {
+            const parsed = parseInt(value, 10);
+            if (!Number.isNaN(parsed)) {
+                selectClass(parsed);
+            }
+        }
+
+        function handleCountyFilterChange(value) {
+            if (!value) {
+                selectCounty(null);
+                return;
+            }
+            const parsed = parseInt(value, 10);
+            if (!Number.isNaN(parsed)) {
+                selectCounty(parsed);
+            }
+        }
+
         function renderUI() {
             const selectedAssetClass = getSelectedAssetClass();
             const selectedCounty = getSelectedCounty();
@@ -287,34 +333,17 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 ? `Viewing ${selectedAssetClass.name}${selectedCounty ? ` in ${selectedCounty.county_name}, ${selectedCounty.state}` : ' across all counties'}`
                 : 'No asset class selected';
 
-            const acList = document.getElementById('assetClassList');
-            acList.innerHTML = data.assetClasses.map(ac => `
-                <li>
-                    <button onclick="selectClass(${ac.id})" class="sidebar-item w-full text-left px-3 py-2 rounded-md text-sm transition ${currentAssetClassId === ac.id ? 'active' : 'hover:bg-gray-100 text-gray-700'}">
-                        ${ac.name}
-                    </button>
-                </li>
-            `).join('');
-
-            const cList = document.getElementById('countyList');
-            if (filteredCounties.length === 0) {
-                cList.innerHTML = '<li class="px-3 py-2 text-sm text-gray-500 italic">No counties for this asset class.</li>';
-            } else {
-                const allActive = currentCountyId === null;
-                cList.innerHTML = `
-                    <li>
-                        <button onclick="selectCounty(null)" class="sidebar-item w-full text-left px-3 py-2 rounded-md text-sm transition ${allActive ? 'active' : 'hover:bg-gray-100 text-gray-700'}">
-                            All Counties
-                        </button>
-                    </li>
-                ` + filteredCounties.map(c => `
-                    <li>
-                        <button onclick="selectCounty(${c.id})" class="sidebar-item w-full text-left px-3 py-2 rounded-md text-sm transition ${currentCountyId === c.id ? 'active' : 'hover:bg-gray-100 text-gray-700'}">
-                            ${c.county_name}, ${c.state}
-                        </button>
-                    </li>
-                `).join('');
+            const acFilter = document.getElementById('assetClassFilter');
+            acFilter.innerHTML = data.assetClasses.map(ac => `<option value="${ac.id}">${ac.name}</option>`).join('');
+            if (selectedAssetClass) {
+                acFilter.value = String(selectedAssetClass.id);
             }
+
+            const countyFilter = document.getElementById('countyFilter');
+            countyFilter.innerHTML = '<option value="">All Counties</option>' + filteredCounties.map(c =>
+                `<option value="${c.id}">${c.county_name}, ${c.state}</option>`
+            ).join('');
+            countyFilter.value = currentCountyId === null ? '' : String(currentCountyId);
 
             document.getElementById('locationCount').textContent = `${filteredLocations.length} location${filteredLocations.length === 1 ? '' : 's'}`;
 
@@ -492,6 +521,14 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         document.addEventListener('change', (event) => {
             if (event.target.id === 'form_asset_class') {
                 renderLocationCountyOptions(parseInt(event.target.value, 10));
+            }
+        });
+
+        document.addEventListener('click', (event) => {
+            const menuWrap = document.getElementById('addMenuWrap');
+            if (!menuWrap) return;
+            if (!menuWrap.contains(event.target)) {
+                closeAddMenu();
             }
         });
 
