@@ -152,6 +152,13 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             renderUI();
         }
 
+        function getVisibleLocations() {
+            return data.locations.filter(l => {
+                if (l.asset_class_id !== currentAssetClassId) return false;
+                return Number.isFinite(l.latitude) && Number.isFinite(l.longitude);
+            });
+        }
+
         function renderUI() {
             // Render Sidebar Asset Classes
             const acList = document.getElementById('assetClassList');
@@ -165,7 +172,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 
             // Filter data
             const filteredCounties = data.counties.filter(c => c.asset_class_id === currentAssetClassId);
-            const filteredLocations = data.locations.filter(l => l.asset_class_id === currentAssetClassId);
+            const visibleLocations = getVisibleLocations();
 
             // Render Sidebar Counties
             const cList = document.getElementById('countyList');
@@ -175,7 +182,8 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 
             // Render Location List
             const lList = document.getElementById('locationList');
-            lList.innerHTML = filteredLocations.map(l => `
+            lList.innerHTML = visibleLocations.length
+                ? visibleLocations.map(l => `
                 <div class="bg-white p-4 border rounded shadow-sm">
                     <div class="font-bold">${l.name}</div>
                     <div class="text-xs text-gray-500">${l.address}</div>
@@ -184,7 +192,8 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                         <span>Lot: ${l.lot_size} ac</span>
                     </div>
                 </div>
-            `).join('');
+            `).join('')
+                : '<div class="bg-white p-4 border rounded shadow-sm text-sm text-gray-500 italic">No mappable locations found for this asset class.</div>';
 
             updateMarkers();
         }
@@ -192,15 +201,14 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         function updateMarkers() {
             markersGroup.clearLayers();
             const mode = document.getElementById('mapMode').value;
-            const filteredLocations = data.locations.filter(l => l.asset_class_id === currentAssetClassId);
+            const visibleLocations = getVisibleLocations();
 
-            if (filteredLocations.length === 0) return;
+            if (visibleLocations.length === 0) return;
 
-            const maxSqFt = Math.max(...filteredLocations.map(l => l.square_footage || 1));
+            const maxSqFt = Math.max(...visibleLocations.map(l => l.square_footage || 1));
             const bounds = L.latLngBounds();
 
-            filteredLocations.forEach(l => {
-                if (!l.latitude || !l.longitude) return;
+            visibleLocations.forEach(l => {
                 const pos = [l.latitude, l.longitude];
                 bounds.extend(pos);
 
@@ -225,7 +233,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 }
             });
 
-            if (filteredLocations.length > 0) {
+            if (bounds.isValid()) {
                 map.fitBounds(bounds, { padding: [50, 50] });
             }
         }
